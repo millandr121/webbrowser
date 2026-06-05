@@ -1,9 +1,10 @@
 use rusqlite::Connection;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct DbState(pub Mutex<Connection>);
 
 mod extensions;
+mod ladybird;
 
 mod db {
     use rusqlite::{Connection, Result as SqlResult};
@@ -410,9 +411,13 @@ pub fn run() {
     let conn = Connection::open(format!("{}/data.db", dir)).expect("db open failed");
     db::init(&conn).expect("db init failed");
 
+    let view_state: ladybird::view::ViewState =
+        Arc::new(Mutex::new(ladybird::view::ViewRegistry::new()));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(DbState(Mutex::new(conn)))
+        .manage(view_state.clone())
         .invoke_handler(tauri::generate_handler![
             commands::create_workspace,
             commands::list_workspaces,
@@ -434,7 +439,30 @@ pub fn run() {
             extensions::install_extension,
             extensions::remove_extension,
             extensions::get_extensions_dir,
+            ladybird::ladybird_status,
+            ladybird::ladybird_build_instructions,
+            ladybird::view::lb_start,
+            ladybird::view::lb_open_tab,
+            ladybird::view::lb_close_tab,
+            ladybird::view::lb_navigate,
+            ladybird::view::lb_reload,
+            ladybird::view::lb_back,
+            ladybird::view::lb_forward,
+            ladybird::view::lb_resize,
+            ladybird::view::lb_tab_states,
         ])
+        .setup(move |app| {
+            // background thread: poll Ladybird WebContent processes for events
+            let handle = app.handle().clone();
+            let poll_state = view_state.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(16)); // ~60fps
+                if let Ok(mut reg) = poll_state.lock() {
+                    reg.poll_events(&handle);
+                }
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("rrsearch crashed");
 }

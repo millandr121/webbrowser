@@ -58,6 +58,15 @@
   let clips = $state<Clip[]>([]);
   let extensions = $state<Extension[]>([]);
 
+  interface LadybirdStatus {
+    available: boolean;
+    binary_path: string | null;
+    version: string | null;
+    engine: string;
+  }
+  let ladybirdStatus = $state<LadybirdStatus | null>(null);
+  let ladybirdBuildInstructions = $state("");
+
   // privacy features
   let cookieKillerEnabled = $state(true);
   let urlCleanerEnabled = $state(true);
@@ -101,6 +110,7 @@
     workspaces = await invoke("list_workspaces");
     sessions = await invoke("list_sessions");
     extensions = await invoke("list_extensions");
+    ladybirdStatus = await invoke("ladybird_status");
   });
 
   // ── Tab management ─────────────────────────────────────────────────────────
@@ -661,6 +671,37 @@
             </div>
           {/each}
         </div>
+
+        <!-- Ladybird engine status -->
+        <div class="engine-card {ladybirdStatus?.available ? 'engine-card--ready' : 'engine-card--pending'}">
+          <div class="engine-header">
+            <span class="engine-title">// rendering engine</span>
+            <span class="engine-badge {ladybirdStatus?.available ? 'engine-badge--ready' : 'engine-badge--pending'}">
+              {ladybirdStatus?.available ? '● ladybird ready' : '○ ladybird not built'}
+            </span>
+          </div>
+          <div class="engine-detail">{ladybirdStatus?.engine ?? '...'}</div>
+          {#if ladybirdStatus?.available}
+            <div class="engine-detail engine-ok">
+              binary: {ladybirdStatus.binary_path}<br/>
+              {#if ladybirdStatus.version}rev: {ladybirdStatus.version}{/if}
+            </div>
+          {:else}
+            <div class="engine-detail">
+              currently using system webview (temp). build ladybird to go fully independent.
+            </div>
+            <button
+              class="engine-build-btn"
+              onclick={async () => { ladybirdBuildInstructions = await invoke("ladybird_build_instructions"); }}
+            >
+              show build instructions →
+            </button>
+          {/if}
+        </div>
+
+        {#if ladybirdBuildInstructions}
+          <pre class="build-instructions">{ladybirdBuildInstructions}</pre>
+        {/if}
 
         <div class="ext-footer">
           <p class="ext-note">// drop .xpi or .crx files into ~/.rrsearch/extensions/ to load custom extensions</p>
@@ -1294,4 +1335,47 @@
   .ext-toggle--off:hover { border-color: #666; color: #666; }
   .ext-footer { border-top: 1px solid #1a1a1a; padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
   .ext-note { color: #333; font-size: 10px; line-height: 1.5; }
+
+  /* ── Engine Status Card ────────────────────────────────────────────────── */
+  .engine-card {
+    border: 1px solid #1e1e1e;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 8px 0 4px;
+  }
+  .engine-card--ready   { border-left: 3px solid #00ff41; }
+  .engine-card--pending { border-left: 3px solid #444; }
+  .engine-header { display: flex; align-items: center; justify-content: space-between; }
+  .engine-title  { color: #555; font-size: 10px; }
+  .engine-badge  { font-size: 10px; font-weight: 700; }
+  .engine-badge--ready   { color: #00ff41; }
+  .engine-badge--pending { color: #555; }
+  .engine-detail { color: #444; font-size: 10px; line-height: 1.5; }
+  .engine-ok     { color: #4fc3f7; }
+  .engine-build-btn {
+    background: none;
+    border: 1px dashed #2a2a2a;
+    color: #555;
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    text-align: left;
+    margin-top: 2px;
+  }
+  .engine-build-btn:hover { border-color: #00ff41; color: #00ff41; }
+  .build-instructions {
+    background: #060606;
+    border: 1px solid #1a1a1a;
+    color: #666;
+    font-size: 10px;
+    line-height: 1.6;
+    padding: 10px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+  }
 </style>
