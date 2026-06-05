@@ -280,13 +280,101 @@ mod commands {
     #[tauri::command]
     pub fn resolve_url(input: String) -> String {
         let trimmed = input.trim();
+        // already a full URL — clean it
         if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-            return trimmed.to_string();
+            return clean_url(trimmed);
         }
+        // looks like a domain
         if !trimmed.contains(' ') && trimmed.contains('.') && !trimmed.contains('?') {
             return format!("https://{}", trimmed);
         }
         format!("https://search.brave.com/search?q={}", url_encode(trimmed))
+    }
+
+    /// Strip known tracking params from a URL string.
+    pub fn clean_url(url: &str) -> String {
+        let Ok(mut parsed) = url::Url::parse(url) else {
+            return url.to_string();
+        };
+
+        const STRIP: &[&str] = &[
+            "utm_source","utm_medium","utm_campaign","utm_term","utm_content",
+            "utm_id","utm_reader","utm_name","utm_brand","utm_network","utm_device",
+            "gclid","gclsrc","gbraid","wbraid","dclid",
+            "fbclid","fb_action_ids","fb_source","fb_ref",
+            "msclkid","twclid",
+            "hsa_acc","hsa_cam","hsa_grp","hsa_ad","hsa_src","hsa_tgt",
+            "hsa_kw","hsa_mt","hsa_net","hsa_ver","_hsenc","_hsmi",
+            "mc_cid","mc_eid","mkt_tok","icid","ncid","cmpid",
+        ];
+
+        let dirty: Vec<String> = parsed
+            .query_pairs()
+            .filter(|(k, _)| {
+                !STRIP.contains(&k.as_ref()) && !k.starts_with("utm_")
+            })
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+
+        if dirty.is_empty() {
+            parsed.set_query(None);
+        } else {
+            parsed.set_query(Some(&dirty.join("&")));
+        }
+
+        parsed.to_string()
+    }
+
+    /// Unwrap common redirect wrappers (google.com/url?q=, t.co, etc.)
+    #[tauri::command]
+    pub fn unwrap_redirect(url: String) -> String {
+        let Ok(parsed) = url::Url::parse(&url) else {
+            return url;
+        };
+        let host = parsed.host_str().unwrap_or("");
+        let path = parsed.path();
+
+        // Google redirect
+        if host.contains("google.") && (path == "/url" || path == "/search") {
+            if let Some(target) = parsed.query_pairs().find(|(k,_)| k == "q" || k == "url").map(|(_,v)| v.to_string()) {
+                return clean_url(&target);
+            }
+        }
+        // Facebook
+        if host.contains("facebook.com") || host == "l.facebook.com" {
+            if let Some(target) = parsed.query_pairs().find(|(k,_)| k == "u").map(|(_,v)| v.to_string()) {
+                if let Ok(decoded) = urlencoding::decode(&target) {
+                    return clean_url(&decoded);
+                }
+            }
+        }
+        // Reddit outbound
+        if host == "out.reddit.com" {
+            if let Some(target) = parsed.query_pairs().find(|(k,_)| k == "url").map(|(_,v)| v.to_string()) {
+                return clean_url(&target);
+            }
+        }
+        // Generic /redirect?url= , /go?url= , /click?url=
+        if matches!(path, "/redirect" | "/go" | "/out" | "/click" | "/l" | "/link") {
+            if let Some(target) = parsed.query_pairs().find(|(k,_)| k == "url" || k == "to" || k == "href").map(|(_,v)| v.to_string()) {
+                if let Ok(decoded) = urlencoding::decode(&target) {
+                    return clean_url(&decoded);
+                }
+            }
+        }
+        clean_url(&url)
+    }
+
+    /// Returns the cookie killer injection script.
+    #[tauri::command]
+    pub fn get_cookie_killer_script() -> String {
+        include_str!("scripts/cookie_killer.js").to_string()
+    }
+
+    /// Returns the URL cleaner injection script.
+    #[tauri::command]
+    pub fn get_url_cleaner_script() -> String {
+        include_str!("scripts/url_cleaner.js").to_string()
     }
 
     fn url_encode(s: &str) -> String {
@@ -322,6 +410,9 @@ pub fn run() {
             commands::save_clip,
             commands::get_clips,
             commands::resolve_url,
+            commands::unwrap_redirect,
+            commands::get_cookie_killer_script,
+            commands::get_url_cleaner_script,
         ])
         .run(tauri::generate_context!())
         .expect("rrsearch crashed");

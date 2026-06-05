@@ -48,6 +48,12 @@
   let activeSessionId = $state<string | null>(null);
   let clips = $state<Clip[]>([]);
 
+  // privacy features
+  let cookieKillerEnabled = $state(true);
+  let urlCleanerEnabled = $state(true);
+  let trackersBlocked = $state(0);
+  let cookiesBanished = $state(0);
+
   // panels
   let showSidebar = $state(false);
   let sidebarTab = $state<"sessions" | "clips" | "workspaces">("sessions");
@@ -107,7 +113,13 @@
   async function navigate(event?: Event) {
     event?.preventDefault();
     if (!addressInput.trim()) return;
-    const resolved: string = await invoke("resolve_url", { input: addressInput });
+    // unwrap redirects first, then resolve
+    let cleaned = addressInput.trim();
+    if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) {
+      cleaned = await invoke("unwrap_redirect", { url: cleaned });
+      if (cleaned !== addressInput.trim()) trackersBlocked += 1;
+    }
+    const resolved: string = await invoke("resolve_url", { input: cleaned });
     tabs = tabs.map(t =>
       t.id === activeTabId
         ? { ...t, url: resolved, title: resolved.replace(/^https?:\/\//, "").slice(0, 30) }
@@ -286,6 +298,13 @@
     </div>
     <button class="tab-new" onclick={newTab} title="new tab">+</button>
     <div class="tabbar-actions">
+      <button
+        class="icon-btn shield-btn {cookieKillerEnabled && urlCleanerEnabled ? 'shield-on' : 'shield-off'}"
+        onclick={() => { cookieKillerEnabled = !cookieKillerEnabled; urlCleanerEnabled = !urlCleanerEnabled; }}
+        title="privacy shield — click to toggle"
+      >
+        ⬡
+      </button>
       <button class="icon-btn" onclick={() => openSidebar("sessions")} title="sessions">◎</button>
       <button class="icon-btn" onclick={() => openSidebar("clips")} title="clips">⌗</button>
       <button class="icon-btn" onclick={() => openSidebar("workspaces")} title="workspaces">▦</button>
@@ -322,6 +341,23 @@
         </div>
       {/if}
     {/if}
+  </div>
+
+  <!-- ── Privacy Bar ──────────────────────────────────────────────────────── -->
+  <div class="privacybar">
+    <span class="pv-item {cookieKillerEnabled ? 'pv-on' : 'pv-off'}">
+      ⬡ cookie banners {cookieKillerEnabled ? 'killed' : 'off'}
+    </span>
+    <span class="pv-sep">│</span>
+    <span class="pv-item {urlCleanerEnabled ? 'pv-on' : 'pv-off'}">
+      ⌀ trackers stripped {urlCleanerEnabled ? 'on' : 'off'}
+    </span>
+    {#if trackersBlocked > 0}
+      <span class="pv-sep">│</span>
+      <span class="pv-count">{trackersBlocked} redirects unwrapped</span>
+    {/if}
+    <span class="pv-spacer"></span>
+    <span class="pv-item pv-dim">no telemetry · local only · you own your data</span>
   </div>
 
   <!-- ── Main Area ─────────────────────────────────────────────────────────── -->
@@ -996,6 +1032,30 @@
     outline: none;
   }
   .t-input::placeholder { color: #333; }
+
+  /* ── Shield Button ────────────────────────────────────────────────────── */
+  .shield-on  { color: #00ff41 !important; }
+  .shield-off { color: #ef5350 !important; }
+
+  /* ── Privacy Bar ───────────────────────────────────────────────────────── */
+  .privacybar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 10px;
+    background: #080808;
+    border-bottom: 1px solid #141414;
+    height: 22px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .pv-item { font-size: 10px; white-space: nowrap; }
+  .pv-on  { color: #00ff4199; }
+  .pv-off { color: #ef535099; }
+  .pv-dim { color: #2a2a2a; }
+  .pv-sep { color: #1e1e1e; font-size: 10px; }
+  .pv-count { font-size: 10px; color: #4fc3f7; }
+  .pv-spacer { flex: 1; }
 
   /* ── Modals ────────────────────────────────────────────────────────────── */
   .modal-overlay {
