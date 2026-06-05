@@ -3,6 +3,8 @@ use std::sync::Mutex;
 
 pub struct DbState(pub Mutex<Connection>);
 
+mod extensions;
+
 mod db {
     use rusqlite::{Connection, Result as SqlResult};
     pub fn init(conn: &Connection) -> SqlResult<()> {
@@ -383,6 +385,12 @@ mod commands {
         include_str!("scripts/forum_mode.js").to_string()
     }
 
+    /// Returns the notification blocker injection script.
+    #[tauri::command]
+    pub fn get_notification_blocker_script() -> String {
+        include_str!("scripts/notification_blocker.js").to_string()
+    }
+
     fn url_encode(s: &str) -> String {
         s.chars()
             .map(|c| match c {
@@ -420,6 +428,12 @@ pub fn run() {
             commands::get_cookie_killer_script,
             commands::get_url_cleaner_script,
             commands::get_forum_mode_script,
+            commands::get_notification_blocker_script,
+            extensions::list_extensions,
+            extensions::toggle_extension,
+            extensions::install_extension,
+            extensions::remove_extension,
+            extensions::get_extensions_dir,
         ])
         .run(tauri::generate_context!())
         .expect("rrsearch crashed");

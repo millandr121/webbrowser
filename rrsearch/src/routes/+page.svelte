@@ -27,6 +27,15 @@
     decision_note: string | null;
   }
 
+  interface Extension {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    enabled: boolean;
+    kind: "builtin" | "loaded";
+  }
+
   interface Clip {
     id: string;
     session_id: string | null;
@@ -47,6 +56,7 @@
   let sessions = $state<Session[]>([]);
   let activeSessionId = $state<string | null>(null);
   let clips = $state<Clip[]>([]);
+  let extensions = $state<Extension[]>([]);
 
   // privacy features
   let cookieKillerEnabled = $state(true);
@@ -64,6 +74,7 @@
   let sidebarTab = $state<"sessions" | "clips" | "workspaces">("sessions");
   let showTerminal = $state(false);
   let showNewWorkspace = $state(false);
+  let showExtensions = $state(false);
   let showSessionPrompt = $state(false);
   let showEndSession = $state(false);
   let terminalInput = $state("");
@@ -89,6 +100,7 @@
   onMount(async () => {
     workspaces = await invoke("list_workspaces");
     sessions = await invoke("list_sessions");
+    extensions = await invoke("list_extensions");
   });
 
   // ── Tab management ─────────────────────────────────────────────────────────
@@ -207,6 +219,10 @@
     clips = await invoke("get_clips", { sessionId: activeSessionId ?? null });
   }
 
+  async function toggleExtension(id: string) {
+    extensions = await invoke("toggle_extension", { id });
+  }
+
   // ── Terminal ───────────────────────────────────────────────────────────────
   function runTerminalCmd() {
     const cmd = terminalInput.trim();
@@ -314,6 +330,7 @@
       <button class="icon-btn" onclick={() => openSidebar("clips")} title="clips">⌗</button>
       <button class="icon-btn" onclick={() => openSidebar("workspaces")} title="workspaces">▦</button>
       <button class="icon-btn {forumModeEnabled ? 'forum-on' : ''}" onclick={() => (forumModeEnabled = !forumModeEnabled)} title="forum mode — clean Reddit/HN/SO">≡</button>
+      <button class="icon-btn" onclick={() => (showExtensions = !showExtensions)} title="extensions">⬡</button>
       <button class="icon-btn {compareMode ? 'compare-on' : ''}" onclick={() => (compareMode = !compareMode)} title="compare mode — side by side">⊟</button>
       <button class="icon-btn" onclick={() => (showTerminal = !showTerminal)} title="terminal">&gt;_</button>
     </div>
@@ -606,6 +623,48 @@
         <div class="modal-actions">
           <button class="modal-btn-primary" onclick={createWorkspace}>create</button>
           <button class="modal-btn-secondary" onclick={() => (showNewWorkspace = false)}>cancel</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── Extensions Panel ─────────────────────────────────────────────────── -->
+  {#if showExtensions}
+    <div class="modal-overlay" onclick={() => (showExtensions = false)} role="dialog" tabindex="-1" aria-label="Extensions">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="modal ext-modal" onclick={(e) => e.stopPropagation()}>
+        <div class="ext-header">
+          <p class="modal-title">// extensions</p>
+          <button class="sidebar-close" onclick={() => (showExtensions = false)}>×</button>
+        </div>
+        <p class="modal-sub">only what you need. nothing else.</p>
+
+        <div class="ext-list">
+          {#each extensions as ext}
+            <div class="ext-item {ext.enabled ? 'ext-item--on' : 'ext-item--off'}">
+              <div class="ext-info">
+                <div class="ext-name">
+                  {ext.name}
+                  <span class="ext-version">v{ext.version}</span>
+                  {#if ext.kind === 'builtin'}
+                    <span class="ext-badge">built-in</span>
+                  {/if}
+                </div>
+                <div class="ext-desc">{ext.description}</div>
+              </div>
+              <button
+                class="ext-toggle {ext.enabled ? 'ext-toggle--on' : 'ext-toggle--off'}"
+                onclick={() => toggleExtension(ext.id)}
+              >
+                {ext.enabled ? 'on' : 'off'}
+              </button>
+            </div>
+          {/each}
+        </div>
+
+        <div class="ext-footer">
+          <p class="ext-note">// drop .xpi or .crx files into ~/.rrsearch/extensions/ to load custom extensions</p>
+          <p class="ext-note">// bitwarden: enable above — use your existing bitwarden account, zero new signups</p>
         </div>
       </div>
     </div>
@@ -1194,4 +1253,45 @@
     cursor: pointer;
   }
   .modal-btn-secondary:hover { border-color: #444; color: #999; }
+
+  /* ── Extensions Panel ──────────────────────────────────────────────────── */
+  .ext-modal { width: 480px; max-width: 95vw; gap: 8px; }
+  .ext-header { display: flex; align-items: center; justify-content: space-between; }
+  .ext-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+  .ext-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #1e1e1e;
+    background: #0d0d0d;
+  }
+  .ext-item--on  { border-left: 3px solid #00ff41; }
+  .ext-item--off { border-left: 3px solid #2a2a2a; opacity: 0.6; }
+  .ext-info { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .ext-name { color: #e0e0e0; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .ext-version { color: #444; font-size: 10px; }
+  .ext-badge {
+    font-size: 9px;
+    color: #00ff4199;
+    border: 1px solid #00ff4133;
+    padding: 1px 4px;
+  }
+  .ext-desc { color: #555; font-size: 11px; line-height: 1.4; }
+  .ext-toggle {
+    background: none;
+    border: 1px solid;
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .ext-toggle--on  { border-color: #00ff41; color: #00ff41; }
+  .ext-toggle--off { border-color: #333; color: #444; }
+  .ext-toggle--on:hover  { background: #00ff4111; }
+  .ext-toggle--off:hover { border-color: #666; color: #666; }
+  .ext-footer { border-top: 1px solid #1a1a1a; padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .ext-note { color: #333; font-size: 10px; line-height: 1.5; }
 </style>
