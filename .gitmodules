@@ -1,0 +1,3 @@
+[submodule "rrsearch/ladybird"]
+	path = rrsearch/ladybird
+	url = https://github.com/LadybirdBrowser/ladybird.git
