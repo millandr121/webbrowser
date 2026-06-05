@@ -377,6 +377,12 @@ mod commands {
         include_str!("scripts/url_cleaner.js").to_string()
     }
 
+    /// Returns the forum mode injection script.
+    #[tauri::command]
+    pub fn get_forum_mode_script() -> String {
+        include_str!("scripts/forum_mode.js").to_string()
+    }
+
     fn url_encode(s: &str) -> String {
         s.chars()
             .map(|c| match c {
@@ -413,6 +419,7 @@ pub fn run() {
             commands::unwrap_redirect,
             commands::get_cookie_killer_script,
             commands::get_url_cleaner_script,
+            commands::get_forum_mode_script,
         ])
         .run(tauri::generate_context!())
         .expect("rrsearch crashed");

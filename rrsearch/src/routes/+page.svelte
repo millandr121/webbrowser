@@ -51,8 +51,13 @@
   // privacy features
   let cookieKillerEnabled = $state(true);
   let urlCleanerEnabled = $state(true);
+  let forumModeEnabled = $state(true);
   let trackersBlocked = $state(0);
   let cookiesBanished = $state(0);
+
+  // compare mode — side-by-side tabs
+  let compareMode = $state(false);
+  let compareTabId = $state<string | null>(null);
 
   // panels
   let showSidebar = $state(false);
@@ -308,6 +313,8 @@
       <button class="icon-btn" onclick={() => openSidebar("sessions")} title="sessions">◎</button>
       <button class="icon-btn" onclick={() => openSidebar("clips")} title="clips">⌗</button>
       <button class="icon-btn" onclick={() => openSidebar("workspaces")} title="workspaces">▦</button>
+      <button class="icon-btn {forumModeEnabled ? 'forum-on' : ''}" onclick={() => (forumModeEnabled = !forumModeEnabled)} title="forum mode — clean Reddit/HN/SO">≡</button>
+      <button class="icon-btn {compareMode ? 'compare-on' : ''}" onclick={() => (compareMode = !compareMode)} title="compare mode — side by side">⊟</button>
       <button class="icon-btn" onclick={() => (showTerminal = !showTerminal)} title="terminal">&gt;_</button>
     </div>
   </div>
@@ -345,13 +352,15 @@
 
   <!-- ── Privacy Bar ──────────────────────────────────────────────────────── -->
   <div class="privacybar">
-    <span class="pv-item {cookieKillerEnabled ? 'pv-on' : 'pv-off'}">
-      ⬡ cookie banners {cookieKillerEnabled ? 'killed' : 'off'}
-    </span>
+    <span class="pv-item {cookieKillerEnabled ? 'pv-on' : 'pv-off'}">⬡ cookies {cookieKillerEnabled ? 'killed' : 'off'}</span>
     <span class="pv-sep">│</span>
-    <span class="pv-item {urlCleanerEnabled ? 'pv-on' : 'pv-off'}">
-      ⌀ trackers stripped {urlCleanerEnabled ? 'on' : 'off'}
-    </span>
+    <span class="pv-item {urlCleanerEnabled ? 'pv-on' : 'pv-off'}">⌀ trackers {urlCleanerEnabled ? 'stripped' : 'off'}</span>
+    <span class="pv-sep">│</span>
+    <span class="pv-item {forumModeEnabled ? 'pv-on' : 'pv-off'}">≡ forum mode {forumModeEnabled ? 'on' : 'off'}</span>
+    {#if compareMode}
+      <span class="pv-sep">│</span>
+      <span class="pv-count">⊟ compare mode active</span>
+    {/if}
     {#if trackersBlocked > 0}
       <span class="pv-sep">│</span>
       <span class="pv-count">{trackersBlocked} redirects unwrapped</span>
@@ -364,7 +373,25 @@
   <div class="main">
 
     <!-- Content / New Tab Page -->
-    <div class="content">
+    <div class="content {compareMode && compareTabId ? 'content--split' : ''}">
+      <!-- Compare pane -->
+      {#if compareMode}
+        <div class="compare-picker">
+          <span class="compare-label">compare with:</span>
+          <div class="compare-tabs">
+            {#each tabs.filter(t => t.id !== activeTabId && t.url) as t}
+              <button
+                class="compare-tab-btn {compareTabId === t.id ? 'compare-tab-btn--active' : ''}"
+                onclick={() => compareTabId = compareTabId === t.id ? null : t.id}
+              >{t.title}</button>
+            {/each}
+            {#if tabs.filter(t => t.id !== activeTabId && t.url).length === 0}
+              <span class="compare-empty">// open another tab to compare</span>
+            {/if}
+          </div>
+        </div>
+      {/if}
+
       {#if !activeTab?.url}
         <!-- New Tab Page -->
         <div class="newtab">
@@ -398,10 +425,24 @@
         </div>
       {:else}
         <!-- Webview placeholder — real webview injected here by Tauri -->
-        <div class="webview-placeholder">
-          <p class="wv-url">{activeTab?.url}</p>
-          <p class="wv-note">// webview renders here in desktop build</p>
-          <p class="wv-note">// select text to clip it to your session</p>
+        <div class="webview-area {compareMode && compareTabId ? 'webview-area--split' : ''}">
+          <div class="webview-placeholder">
+            <p class="wv-label">// primary</p>
+            <p class="wv-url">{activeTab?.url}</p>
+            <p class="wv-note">webview renders here in desktop build</p>
+            {#if forumModeEnabled}
+              <p class="wv-note pv-on">≡ forum mode active — ads/sidebar stripped</p>
+            {/if}
+          </div>
+          {#if compareMode && compareTabId}
+            {@const compareTab = tabs.find(t => t.id === compareTabId)}
+            <div class="webview-divider"></div>
+            <div class="webview-placeholder">
+              <p class="wv-label">// comparing</p>
+              <p class="wv-url">{compareTab?.url}</p>
+              <p class="wv-note">webview renders here in desktop build</p>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1033,9 +1074,50 @@
   }
   .t-input::placeholder { color: #333; }
 
-  /* ── Shield Button ────────────────────────────────────────────────────── */
+  /* ── Icon Button States ────────────────────────────────────────────────── */
   .shield-on  { color: #00ff41 !important; }
   .shield-off { color: #ef5350 !important; }
+  .forum-on   { color: #4fc3f7 !important; }
+  .compare-on { color: #ce93d8 !important; }
+
+  /* ── Compare Mode ──────────────────────────────────────────────────────── */
+  .compare-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    background: #0d0d0d;
+    border-bottom: 1px solid #1a1a1a;
+    flex-shrink: 0;
+  }
+  .compare-label { color: #444; font-size: 10px; white-space: nowrap; }
+  .compare-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .compare-tab-btn {
+    background: #141414;
+    border: 1px solid #1e1e1e;
+    color: #666;
+    padding: 2px 8px;
+    font-family: inherit;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .compare-tab-btn:hover { border-color: #ce93d8; color: #ce93d8; }
+  .compare-tab-btn--active { border-color: #ce93d8; color: #ce93d8; background: #1a1020; }
+  .compare-empty { color: #333; font-size: 10px; font-style: italic; }
+  .webview-area {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    height: 100%;
+  }
+  .webview-area--split .webview-placeholder { flex: 1; }
+  .webview-divider {
+    width: 1px;
+    background: #2a0a4a;
+    flex-shrink: 0;
+  }
+  .content--split { flex-direction: column; }
+  .wv-label { color: #333; font-size: 10px; margin-bottom: 4px; }
 
   /* ── Privacy Bar ───────────────────────────────────────────────────────── */
   .privacybar {
